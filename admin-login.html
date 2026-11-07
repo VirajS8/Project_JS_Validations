@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Login — MOCTALE</title>
+  <link rel="stylesheet" href="admin-style.css" />
+</head>
+<body>
+<div class="admin-login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="unnamed.webp" alt="MOCTALE" />
+      <div class="login-logo-text">MOCTALE</div>
+    </div>
+
+    <h2>Admin Login</h2>
+    <p class="login-sub">Sign in to access the admin panel</p>
+
+    <div class="login-error" id="loginError">Invalid credentials. Please try again.</div>
+
+    <form id="loginForm" onsubmit="handleLogin(event)" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="email">Email Address</label>
+        <input class="form-control" type="email" id="email" placeholder="admin@moctale.com" autocomplete="email" />
+        <div class="form-hint" id="email-hint"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <div class="pw-field-wrap">
+          <input class="form-control" type="password" id="password" placeholder="Enter your password" autocomplete="current-password" maxlength="20" />
+          <button type="button" class="pw-toggle" onclick="togglePw()" aria-label="Show password">
+            <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="form-hint" id="pw-hint"></div>
+      </div>
+      <button type="submit" class="btn-login" id="submit-btn">🔐 Sign In to Admin</button>
+    </form>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+  if (localStorage.getItem('adminLoggedIn') === 'true') {
+    window.location.href = 'admin-home.html';
+  }
+
+  // NEW 5: Caps Lock warning on password field
+  document.getElementById('password').addEventListener('keyup', function (ev) {
+    const hint = document.getElementById('pw-hint');
+    const capsMsg = '⚠ Caps Lock is ON';
+    if (ev.getModifierState && ev.getModifierState('CapsLock')) {
+      hint.textContent = capsMsg;
+    } else if (hint.textContent === capsMsg) {
+      hint.textContent = '';
+    }
+  });
+
+  // NEW 4: lockout state
+  let failedAttempts = 0, lockUntil = 0;
+
+// Password rules: required, no spaces, 8-20 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char, not like email
+  function getPasswordError(pw, email) {
+    if (!pw) return '✗ Password is required.';
+    if (/\s/.test(pw)) return '✗ Password must not contain spaces.';
+    if (pw.length < 8) return '✗ Password must be at least 8 characters.';
+    if (pw.length > 20) return '✗ Password must be at most 20 characters.';
+    if (!/[A-Z]/.test(pw)) return '✗ Password must contain at least 1 uppercase letter.';
+    if (!/[a-z]/.test(pw)) return '✗ Password must contain at least 1 lowercase letter.';
+    if (!/[0-9]/.test(pw)) return '✗ Password must contain at least 1 number.';
+    if (!/[^A-Za-z0-9]/.test(pw)) return '✗ Password must contain at least 1 special character (e.g. @ # $ !).';
+    const user = (email || '').split('@')[0].toLowerCase();
+    if (email && (pw.toLowerCase() === email.toLowerCase() || (user.length >= 3 && pw.toLowerCase().includes(user)))) {
+      return '✗ Password must not be similar to your email.';
+    }
+    return '';
+  }
+
+  // Demo admin password (change as needed). Must follow the rules above.
+  const ADMIN_PASSWORD = 'Moctale@123';
+
+  function togglePw() {
+    const input = document.getElementById('password');
+    const icon = document.getElementById('eye-icon');
+    if (input.type === 'password') {
+      input.type = 'text';
+      icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    } else {
+      input.type = 'password';
+      icon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    }
+  }
+
+  function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const emailHint = document.getElementById('email-hint');
+    const pwHint = document.getElementById('pw-hint');
+    const errorBox = document.getElementById('loginError');
+    emailHint.textContent = ''; pwHint.textContent = ''; errorBox.style.display = 'none';
+    let valid = true;
+
+    // Validation 1: Email required + format
+    if (!email) {
+      emailHint.textContent = '✗ Email is required.';
+      valid = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      emailHint.textContent = '✗ Enter a valid email address.';
+      valid = false;
+    } else if (!email.toLowerCase().endsWith('@moctale.com')) {
+      // Validation 2: Must be a @moctale.com email
+      emailHint.textContent = '✗ Admin email must end with @moctale.com';
+      valid = false;
+    }
+
+    // NEW 1: email username (before @) must be at least 3 characters
+    if (!emailHint.textContent && email.split('@')[0].length < 3) {
+      emailHint.textContent = '✗ Email username must be at least 3 characters.';
+      valid = false;
+    }
+
+    // NEW 2: email must not contain consecutive dots or start/end its username with a dot
+    if (!emailHint.textContent && /\.\.|^\.|\.@/.test(email)) {
+      emailHint.textContent = '✗ Email must not contain consecutive dots or a dot at the start/end of the username.';
+      valid = false;
+    }
+
+    // Password validation: required, length, pattern, not like email
+    const pwError = getPasswordError(password, email);
+    if (pwError) {
+      pwHint.textContent = pwError;
+      valid = false;
+    }
+
+    // All fields empty -> general message
+    if (!email && !password) {
+      errorBox.textContent = '✗ All fields are required. Please enter your email and password.';
+      errorBox.style.display = 'block';
+    }
+
+    if (!valid) return;
+
+    // NEW 4: lock the form for 30s after 3 failed attempts
+    if (Date.now() < lockUntil) {
+      const secs = Math.ceil((lockUntil - Date.now()) / 1000);
+      errorBox.textContent = 'Too many failed attempts. Try again in ' + secs + ' seconds.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    if (password === ADMIN_PASSWORD) {
+      localStorage.setItem('adminLoggedIn', 'true');
+      localStorage.setItem('adminEmail', email);
+      const btn = document.getElementById('submit-btn');
+      btn.textContent = '⏳ Signing in…';
+      btn.disabled = true;
+      setTimeout(() => window.location.href = 'admin-home.html', 800);
+    } else {
+      failedAttempts++;
+      const locked = failedAttempts >= 3;
+      if (locked) { lockUntil = Date.now() + 30000; failedAttempts = 0; }
+      errorBox.textContent = locked
+        ? 'Too many failed attempts. Locked for 30 seconds.'
+        : 'Invalid credentials. ' + (3 - failedAttempts) + ' attempt(s) left.';
+      errorBox.style.display = 'block';
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    }
+  }
+
+  function showToast(msg) {
+    const wrap = document.getElementById('toast-wrap');
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    wrap.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+  }
+</script>
+</body>
+</html>
